@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BM Almacenes - Cocina</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; background: #f5f5f5; }
+        h1 { color: #333; }
+        .section { background: white; border: 1px solid #ddd; padding: 15px; margin: 15px 0; border-radius: 8px; }
+        .card { padding: 10px; margin: 8px 0; border-left: 4px solid #007bff; background: #f9f9f9; }
+        .bajo { color: red; font-weight: bold; }
+        label { display: block; margin: 10px 0 5px; font-weight: bold; }
+        input, select { padding: 10px; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #007bff; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 15px; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        .exito { color: green; font-weight: bold; margin-top: 10px; }
+        .error { color: red; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🍳 BM Almacenes - Cocina</h1>
+
+    <!-- SECCION 1: Ver stock -->
+    <div class="section">
+        <h2>📦 Stock Actual</h2>
+        <div id="stock-list">Cargando...</div>
+    </div>
+
+    <!-- SECCION 2: Hacer pedido -->
+    <div class="section">
+        <h2>📋 Solicitar Producto</h2>
+        <form id="pedidoForm">
+            <label>Producto:</label>
+            <select id="producto" required>
+                <option value="">Selecciona un producto...</option>
+            </select>
+
+            <label>Cantidad:</label>
+            <input type="number" id="cantidad" step="0.1" min="0.1" required placeholder="Ej: 2.5">
+
+            <label>De qué almacén:</label>
+            <select id="almacenOrigen" required>
+                <option value="1">Bistro</option>
+                <option value="2">Nervion</option>
+                <option value="3">Liquidos (requiere autorizacion)</option>
+            </select>
+
+            <label>Tu PIN:</label>
+            <input type="password" id="pinSolicitante" maxlength="6" required placeholder="Ej: 1111">
+
+            <label>PIN de quien autoriza (si es Liquidos):</label>
+            <input type="password" id="pinAutorizante" maxlength="6" placeholder="Ej: 4444">
+
+            <button type="submit">📤 Enviar Solicitud</button>
+        </form>
+        <div id="mensaje"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5001';
+
+        // Cargar stock y llenar el select de productos
+        async function cargarStock() {
+            try {
+                const response = await fetch(`${API_URL}/api/stock?almacen=cocina`);
+                const data = await response.json();
+                
+                if (data.status !== 'ok') {
+                    document.getElementById('stock-list').innerHTML = 'Error al cargar';
+                    return;
+                }
+
+                let html = '';
+                const select = document.getElementById('producto');
+                
+                data.data.forEach(item => {
+                    const esBajo = item.cantidad_actual <= item.stock_minimo_local;
+                    html += `
+                        <div class="card">
+                            <strong>${item.producto}</strong><br>
+                            Cantidad: ${item.cantidad_actual} ${item.unidad_medida}
+                            ${esBajo ? '<span class="bajo"> - ¡STOCK BAJO!</span>' : ''}
+                        </div>
+                    `;
+                    
+                    // Llenar el select de productos (usamos nombre como valor, la API busca por ID)
+                    // Para simplificar, cargaremos todos los productos disponibles
+                });
+                document.getElementById('stock-list').innerHTML = html;
+            } catch (error) {
+                document.getElementById('stock-list').innerHTML = 'No se pudo conectar al servidor';
+            }
+        }
+
+        // Cargar todos los productos para el select
+        async function cargarProductos() {
+            try {
+                const response = await fetch(`${API_URL}/api/stock`);
+                const data = await response.json();
+                const select = document.getElementById('producto');
+                
+                if (data.status === 'ok') {
+                    // Usamos un Set para no repetir productos
+                    const productosVistos = new Set();
+                    data.data.forEach(item => {
+                        if (!productosVistos.has(item.producto)) {
+                            productosVistos.add(item.producto);
+                            const option = document.createElement('option');
+                            option.value = item.producto; // Por ahora usamos nombre, luego cambiamos a ID
+                            option.textContent = item.producto;
+                            select.appendChild(option);
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('Error cargando productos', e);
+            }
+        }
+
+        // Enviar el pedido
+        document.getElementById('pedidoForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const mensajeDiv = document.getElementById('mensaje');
+            mensajeDiv.textContent = 'Enviando...';
+            mensajeDiv.className = '';
+
+            // Por ahora necesitamos los IDs. Vamos a mapear nombres a IDs manualmente
+            // o mejor: hagamos un endpoint que nos de los productos con ID
+            // Por simplicidad de HOY, usemos IDs fijos para probar:
+            const productosMap = {
+                'Tomate Redondo': 1,
+                'Tomate Cherry': 2,
+                'Pechuga de Pollo': 3,
+                'Cebolla': 4,
+                'Papa': 5,
+                'Aceite de Oliva': 6,
+                'Cerveza Ultra Botella 335ml': 7,
+                'Cerveza Ultra Lata 335ml': 8,
+                'Cerveza Ultra Caja 24 Botellas': 9,
+                'Leche Entera': 10,
+                'Huevos': 11,
+                'Carne de Res': 12
+            };
+
+            const productoNombre = document.getElementById('producto').value;
+            const productoId = productosMap[productoNombre];
+
+            if (!productoId) {
+                mensajeDiv.textContent = 'Producto no reconocido';
+                mensajeDiv.className = 'error';
+                return;
+            }
+
+            const body = {
+                producto_id: productoId,
+                almacen_id: parseInt(document.getElementById('almacenOrigen').value),
+                almacen_destino_id: 4, // Cocina siempre
+                tipo_movimiento: 'consumo_cocina',
+                cantidad: parseFloat(document.getElementById('cantidad').value),
+                pin_solicitante: document.getElementById('pinSolicitante').value,
+                pin_autorizante: document.getElementById('pinAutorizante').value || null,
+                observaciones: 'Solicitud desde tablet cocina'
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/api/movimientos`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'ok') {
+                    mensajeDiv.textContent = `✅ ${result.mensaje} - ${result.producto}`;
+                    mensajeDiv.className = 'exito';
+                    document.getElementById('pedidoForm').reset();
+                    cargarStock(); // Recargar stock para ver cambios
+                } else {
+                    mensajeDiv.textContent = `❌ Error: ${result.error}`;
+                    mensajeDiv.className = 'error';
+                }
+            } catch (error) {
+                mensajeDiv.textContent = '❌ No se pudo conectar al servidor';
+                mensajeDiv.className = 'error';
+            }
+        });
+
+        // Cargar al inicio
+        cargarStock();
+        cargarProductos();
+    </script>
+</body>
+</html>
